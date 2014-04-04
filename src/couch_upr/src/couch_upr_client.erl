@@ -63,10 +63,10 @@ start(Name, Bucket, AdmUser, AdmPasswd) ->
     gen_server:start_link(?MODULE, [Name, Bucket, AdmUser, AdmPasswd], []).
 
 
--spec add_stream(pid(), partition_id(), partition_version(), update_seq(), update_seq()) ->
-                                                       {request_id(), term()}.
-add_stream(Pid, PartId, PartVersion, StartSeq, EndSeq) ->
-    gen_server:call(Pid, {add_stream, PartId, PartVersion, StartSeq, EndSeq}).
+-spec add_stream(pid(), partition_id(), uuid(), update_seq(),
+    update_seq()) -> {request_id(), term()}.
+add_stream(Pid, PartId, PartUuid, StartSeq, EndSeq) ->
+    gen_server:call(Pid, {add_stream, PartId, PartUuid, StartSeq, EndSeq}).
 
 
 -spec remove_stream(pid(), partition_id()) ->
@@ -136,7 +136,8 @@ enum_docs_since(_, _, [], _, _, _, _) ->
     {rollback, 0};
 enum_docs_since(Pid, PartId, [PartVersion|PartVersions], StartSeq, EndSeq,
         CallbackFn, InAcc) ->
-    {RequestId, Resp} =  add_stream(Pid, PartId, PartVersion, StartSeq, EndSeq),
+    {PartUuid, _} = PartVersion,
+    {RequestId, Resp} =  add_stream(Pid, PartId, PartUuid, StartSeq, EndSeq),
     case Resp of
     {failoverlog, FailoverLog} ->
         case length(FailoverLog) > ?UPR_MAX_FAILOVER_LOG_SIZE of
@@ -192,13 +193,18 @@ init([Name, Bucket, AdmUser, AdmPasswd]) ->
 
 
 % Add caller to the request queue and wait for gen_server to reply on response arrival
-handle_call({add_stream, PartId, PartVersion, StartSeq, EndSeq}, From, State) ->
+handle_call({add_stream, PartId, PartUuid, StartSeq, EndSeq}, From, State) ->
     #state{
        socket = Socket,
        request_id = RequestId
     } = State,
+    % TODO vmx 2014-04-04: And proper retry if the last request didn't return
+    % the full expected result
+    SnapshotStart = 0,
+    SnapshotEnd = 0,
     StreamRequest = couch_upr_consumer:encode_stream_request(
-        PartId, RequestId, 0, StartSeq, EndSeq, PartVersion),
+        PartId, RequestId, 0, StartSeq, EndSeq, PartUuid, SnapshotStart,
+        SnapshotEnd),
     case gen_tcp:send(Socket, StreamRequest) of
     ok ->
         State2 = next_request_id(State),
