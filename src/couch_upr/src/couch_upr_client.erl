@@ -146,6 +146,7 @@ enum_docs_since(_, _, [], _, _, _, _, _) ->
     {rollback, 0};
 enum_docs_since(Pid, PartId, PartVersions, StartSeq, EndSeq, Flags,
         CallbackFn, InAcc) ->
+    ?LOG_INFO("vmx: couch_upr_cleint: enum_docs_since: requesting items from partition ~p from seq ~p to ~p", [PartId, StartSeq, EndSeq]),
     [PartVersion | PartVersionsRest] = PartVersions,
     {PartUuid, _} = PartVersion,
     {RequestId, Resp} =  add_stream(
