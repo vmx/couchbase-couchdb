@@ -68,6 +68,10 @@
 % Seqs cache ttl in microseconds
 -define(SEQS_CACHE_TTL, 300000).
 
+% The minimum time between two subsequent updater starts triggered by a
+% stale=updater_after request in microseconds
+-define(UPDATER_THROTTLE_INTERVAL, 500000).
+
 -record(util_stats, {
     useful_indexing_time = 0.0  :: float(),
     wasted_indexing_time = 0.0  :: float(),
@@ -119,7 +123,8 @@
     pending_transition_waiters = []    :: [{From::{pid(), reference()}, #set_view_group_req{}}],
     update_listeners = dict:new()      :: dict(),
     compact_log_files = nil            :: 'nil' | {[[string()]], partition_seqs(), partition_versions()},
-    timeout = ?DEFAULT_TIMEOUT         :: non_neg_integer() | 'infinity'
+    timeout = ?DEFAULT_TIMEOUT         :: non_neg_integer() | 'infinity',
+    last_updater_run = {0, 0, 0}       :: os:timestamp()
 }).
 
 -define(inc_stat(Group, S),
@@ -3385,12 +3390,14 @@ process_view_group_request(#set_view_group_req{stale = ok} = Req, From, State) -
 process_view_group_request(#set_view_group_req{stale = update_after} = Req, From, State) ->
     #state{
         group = Group,
-        replica_partitions = ReplicaParts
+        replica_partitions = ReplicaParts,
+        last_updater_run = LastUpdaterRun
     } = State,
     #set_view_group_req{debug = Debug} = Req,
     [] = reply_with_group(Group, ReplicaParts, [#waiter{from = From, debug = Debug}]),
+    LastRunDiff = timer:now_diff(os:timestamp(), LastUpdaterRun),
     case State#state.updater_pid of
-    Pid when is_pid(Pid) ->
+    Pid when is_pid(Pid) orelse LastRunDiff < ?UPDATER_THROTTLE_INTERVAL ->
         State;
     nil ->
         % Do not start updater if we have triggered an async seqs update.
@@ -3402,7 +3409,8 @@ process_view_group_request(#set_view_group_req{stale = update_after} = Req, From
         true ->
             State;
         false ->
-            start_updater(State, Options)
+            State2 = State#state{last_updater_run = os:timestamp()},
+            start_updater(State2, Options)
         end
     end.
 
