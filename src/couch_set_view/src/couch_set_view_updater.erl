@@ -719,16 +719,16 @@ do_maps(Group, MapQueue, WriteQueue) ->
         couch_work_queue:close(WriteQueue);
     {ok, Queue, _QueueSize} ->
         ViewCount = length(Group#set_view_group.views),
-        Items = lists:foldr(
-            fun(#dcp_doc{deleted = true} = DcpDoc, Acc) ->
+        lists:foreach(
+            fun(#dcp_doc{deleted = true} = DcpDoc) ->
                 #dcp_doc{
                     id = Id,
                     partition = PartId,
                     seq = Seq
                 } = DcpDoc,
                 Item = {Seq, Id, PartId, []},
-                [Item | Acc];
-            (#dcp_doc{deleted = false} = DcpDoc, Acc) ->
+                ok = couch_work_queue:queue(WriteQueue, [Item]);
+            (#dcp_doc{deleted = false} = DcpDoc) ->
                 #dcp_doc{
                     id = Id,
                     body = Body,
@@ -776,20 +776,20 @@ do_maps(Group, MapQueue, WriteQueue) ->
                             ?LOG_MAPREDUCE_ERROR(DebugMsg, Args)
                         end, LogList),
                     Item = {Seq, Id, PartId, Result2},
-                    [Item | Acc]
+                    ok = couch_work_queue:queue(WriteQueue, [Item])
                 catch _:{error, Reason} ->
                     ErrorMsg = "Bucket `~s`, ~s group `~s`, error mapping document `~s`: ~s",
                     Args = [SetName, Type, DDocId, Id, couch_util:to_binary(Reason)],
                     ?LOG_MAPREDUCE_ERROR(ErrorMsg, Args),
-                    [{Seq, Id, PartId, []} | Acc]
+                    ok = couch_work_queue:queue(
+                        WriteQueue, [{Seq, Id, PartId, []}])
                 end;
-            (snapshot_marker, Acc) ->
-                [snapshot_marker | Acc];
-            ({part_versions, _} = PartVersions, Acc) ->
-                [PartVersions | Acc]
+            (snapshot_marker) ->
+                ok = couch_work_queue:queue(WriteQueue, [snapshot_marker]);
+            ({part_versions, _} = PartVersions) ->
+                ok = couch_work_queue:queue(WriteQueue, [PartVersions])
             end,
-            [], Queue),
-        ok = couch_work_queue:queue(WriteQueue, Items),
+            Queue),
         do_maps(Group, MapQueue, WriteQueue)
     end.
 
