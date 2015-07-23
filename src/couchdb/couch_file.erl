@@ -90,7 +90,7 @@ append_binary(Fd, Bin) ->
 
 append_binary_crc32(Fd, Bin) ->
     gen_server:call(Fd,
-        {append_bin, assemble_file_chunk(Bin, erlang:crc32(Bin))}, infinity).
+        {append_bin, assemble_file_chunk(Bin, crc32:crc32(Bin))}, infinity).
 
 append_raw_chunk(Fd, Chunk) ->
     gen_server:call(Fd, {append_bin, Chunk}, infinity).
@@ -139,7 +139,7 @@ pread_iolist(Fd, Pos) ->
     {ok, IoList} ->
         {ok, IoList};
     {ok, IoList, <<Crc32:32/integer>>} ->
-        case erlang:crc32(IoList) of
+        case crc32:crc32(IoList) of
         Crc32 ->
             {ok, IoList};
         _ ->
@@ -306,7 +306,7 @@ write_header(Fd, Data) ->
 
 
 write_header_bin(Fd, Bin) ->
-    Crc32 = erlang:crc32(Bin),
+    Crc32 = crc32:crc32(Bin),
     % now we assemble the final header binary and write to disk
     FinalBin = <<Crc32:32, Bin/binary>>,
     {ok, _Pos} = gen_server:call(Fd, {write_header, FinalBin}, infinity).
@@ -547,7 +547,7 @@ load_header(Fd, Block) ->
     end,
     <<Crc32:32, HeaderBin/binary>> =
         iolist_to_binary(remove_block_prefixes(RawBin, 5)),
-    Crc32 = erlang:crc32(HeaderBin),
+    Crc32 = crc32:crc32(HeaderBin),
     {ok, HeaderBin}.
 
 maybe_read_more_iolist(Buffer, DataSize, NextPos, Fd) ->

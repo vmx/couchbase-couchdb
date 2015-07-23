@@ -1,0 +1,10 @@
+{application,crc32,
+             [{description,"CRC32 NIF"},
+              {vsn,"0.1.0"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {env,[]},
+              {modules,[crc32]},
+              {contributors,[]},
+              {licenses,[]},
+              {links,[]}]}.
