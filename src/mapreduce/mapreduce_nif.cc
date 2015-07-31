@@ -484,6 +484,18 @@ void free_map_reduce_context(ErlNifEnv *env, void *res) {
 }
 
 
+hrtime_t gethrtime_period(void)
+{
+    /* this isn't actually completely accurate, but who cares ;-) */
+    hrtime_t start = gethrtime();
+    hrtime_t end = gethrtime() - start;
+    if (end == 0) {
+       end = 1;
+    }
+
+    return end;
+}
+
 #define SEC_TO_NSEC 1000000000ULL
 #define NSEC_TO_MSEC (1.0/1000000.0)
 
