@@ -723,30 +723,22 @@ do_maps(Group, MapQueue, WriteQueue) ->
         couch_work_queue:close(WriteQueue);
     {ok, Queue, _QueueSize} ->
         ViewCount = length(Group#set_view_group.views),
-        {Items, _} = lists:foldl(
-            fun(#dcp_doc{deleted = true} = DcpDoc, {Acc, Size}) ->
+        ProcessItemFun =
+            fun(#dcp_doc{deleted = true} = DcpDoc, {Acc, Size, MapContext}) ->
                 #dcp_doc{
                     id = Id,
                     partition = PartId,
                     seq = Seq
                 } = DcpDoc,
                 Item = {Seq, Id, PartId, []},
-                {[Item | Acc], Size};
-            (#dcp_doc{deleted = false} = DcpDoc, {Acc0, Size0}) ->
-                % When there are a lot of emits per document the memory can
-                % grow almost indefinitely as the queue size is only limited
-                % by the number of documents and not their emits.
-                % In case the accumulator grows huge, queue the items early
-                % into the writer queue. Only take emits into account, the
-                % other cases in this `foldl` won't ever have an significant
-                % size.
-                {Acc, Size} = case Size0 > ?QUEUE_ACC_BATCH_SIZE of
-                true ->
-                    couch_work_queue:queue(WriteQueue, lists:reverse(Acc0)),
-                    {[], 0};
-                false ->
-                    {Acc0, Size0}
-                end,
+                {[Item | Acc], Size, MapContext};
+            (#dcp_doc{deleted = false} = DcpDoc, {Acc, Size, MapContext}) ->
+                % XXX vmx 2015-08-10: Optimize this as possible just pass
+                % the map context on into to the map function.
+                % Due to the ec_plists module, the map context was started
+                % in  different process, hence we need to put it on the
+                % right process.
+                erlang:put(map_context, MapContext),
                 #dcp_doc{
                     id = Id,
                     body = Body,
@@ -794,19 +786,44 @@ do_maps(Group, MapQueue, WriteQueue) ->
                             ?LOG_MAPREDUCE_ERROR(DebugMsg, Args)
                         end, LogList),
                     Item = {Seq, Id, PartId, Result2},
-                    {[Item | Acc], Size + erlang:external_size(Result2)}
+                    {[Item | Acc], Size + erlang:external_size(Result2), MapContext}
                 catch _:{error, Reason} ->
                     ErrorMsg = "Bucket `~s`, ~s group `~s`, error mapping document `~s`: ~s",
                     Args = [SetName, Type, DDocId, Id, couch_util:to_binary(Reason)],
                     ?LOG_MAPREDUCE_ERROR(ErrorMsg, Args),
-                    {[{Seq, Id, PartId, []} | Acc], Size}
+                    {[{Seq, Id, PartId, []} | Acc], Size, MapContext}
                 end;
-            (snapshot_marker, {Acc, Size}) ->
-                {[snapshot_marker | Acc], Size};
-            ({part_versions, _} = PartVersions, {Acc, Size}) ->
-                {[PartVersions | Acc], Size}
+            (snapshot_marker, {Acc, Size, MapContext}) ->
+                {[snapshot_marker | Acc], Size, MapContext};
+            ({part_versions, _} = PartVersions, {Acc, Size, MapContext}) ->
+                {[PartVersions | Acc], Size, MapContext}
             end,
-            {[], 0}, Queue),
+        FoldItemsFun = fun(MapContext) ->
+            fun(Items) ->
+                lists:foldl(ProcessItemFun, {[], 0, MapContext}, Items)
+            end
+        end,
+        FuseItemsFun = fun({ItemsA, SizeA, MapContext}, {ItemsB, SizeB, MapContext}) ->
+            Items = ItemsB ++ ItemsA,
+            Size = SizeB + SizeA,
+            % When there are a lot of emits per document the memory can
+            % grow almost indefinitely as the queue size is only limited
+            % by the number of documents and not their emits.
+            % In case the accumulator grows huge, queue the items early
+            % into the writer queue. Only take emits into account, the
+            % other cases in this `foldl` won't ever have an significant
+            case Size > ?QUEUE_ACC_BATCH_SIZE/2 of
+            true ->
+                couch_work_queue:queue(WriteQueue, lists:reverse(Items)),
+                {[], 0, MapContext};
+            false ->
+                {Items, Size, MapContext}
+            end
+        end,
+        Malt = [4, {processes, schedulers}],
+
+        {Items, _, _} = ec_plists:runmany(
+            FoldItemsFun(erlang:get(map_context)), FuseItemsFun, Queue, Malt),
         ok = couch_work_queue:queue(WriteQueue, lists:reverse(Items)),
         do_maps(Group, MapQueue, WriteQueue)
     end.
