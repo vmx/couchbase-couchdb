@@ -262,10 +262,9 @@ view_row_obj_map({{Key, DocId}, {PartId, Node, Value}}, true) when is_integer(Pa
       ",\"value\":", RawValue/binary, "}">>;
 
 % Row from local node, query with ?debug=false
-view_row_obj_map({{Key, DocId}, {PartId, Value}}, false) when is_integer(PartId) ->
-    {json, RawValue} = Value,
-    <<"{\"id\":", (?JSON_ENCODE(DocId))/binary,
-      ",\"key\":", (?JSON_ENCODE(Key))/binary,
+view_row_obj_map({{{json, RawKey}, DocId}, {PartId, {json, RawValue}}}, false) when is_integer(PartId) ->
+    <<"{\"id\":", DocId/binary,
+      ",\"key\":", RawKey/binary,
       ",\"value\":", RawValue/binary, "}">>;
 
 % Row from local node, old couchdb views
