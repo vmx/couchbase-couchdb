@@ -1599,6 +1599,7 @@ init_tmp_files(WriterAcc) ->
     true ->
         [begin
              FileName = new_sort_file_name(WriterAcc),
+?LOG_INFO("vmx: couch_set_view_updater: init_tmp_files: trying to open: ~1000000p", [FileName]),
              {ok, Fd} = file2:open(FileName, [raw, append, binary]),
              {Id, #set_view_tmp_file_info{fd = Fd, name = FileName}}
          end || Id <- Ids];
