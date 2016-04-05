@@ -935,7 +935,7 @@ flush_writes(#writer_acc{initial_build = true} = WriterAcc) ->
         end,
         [], DocIdViewIdKeys),
     #set_view_tmp_file_info{fd = IdFd} = dict:fetch(ids_index, TmpFiles),
-    ok = file:write(IdFd, IdRecords),
+    ok = couch_set_view_util:write_compressed(IdFd, IdRecords),
 
     {InsertKVCount, TmpFiles2} = Mod:write_kvs(Group, TmpFiles, ViewKVs),
 
@@ -1095,7 +1095,7 @@ write_to_tmp_batch_files(ViewKeyValuesToAdd, DocIdViewIdKeys, WriterAcc) ->
         ok
     end,
 
-    ok = file:write(IdTmpFileFd, IdsData2),
+    ok = couch_set_view_util:write_compressed(IdTmpFileFd, IdsData2),
 
     IdTmpFileInfo2 = IdTmpFileInfo#set_view_tmp_file_info{
         fd = IdTmpFileFd,
@@ -1204,7 +1204,8 @@ update_tmp_files(Mod, WriterAcc, ViewKeyValues, KeysToRemoveByView) ->
                                     name = ViewTmpFilePath} ->
                 ok
             end,
-            ok = file:write(ViewTmpFileFd, BatchData2),
+            ok = couch_set_view_util:write_compressed(
+                ViewTmpFileFd, BatchData2),
             ViewTmpFileInfo2 = ViewTmpFileInfo#set_view_tmp_file_info{
                 fd = ViewTmpFileFd,
                 name = ViewTmpFilePath,

@@ -36,6 +36,7 @@
 -export([send_group_info/2]).
 -export([filter_seqs/2]).
 -export([log_port_error/3]).
+-export([write_compressed/2]).
 
 
 -include("couch_db.hrl").
@@ -822,3 +823,12 @@ log_port_error(<<"GENERIC ", Msg/binary>>, ErrorMsg, ErrorArgs) ->
 log_port_error(Msg, ErrorMsg, ErrorArgs) ->
     ?LOG_ERROR(ErrorMsg, ErrorArgs ++ [Msg]),
     Msg.
+
+
+-spec write_compressed(pid(), iolist()) -> ok.
+write_compressed(_Fd, []) ->
+    ok;
+write_compressed(Fd, Data) ->
+    Compressed = couch_compress:compress(Data),
+    ok = file:write(Fd, <<(byte_size(Compressed)):64/native,
+        Compressed/binary>>).

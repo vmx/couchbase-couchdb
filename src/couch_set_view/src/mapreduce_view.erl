@@ -75,7 +75,7 @@ write_kvs(Group, TmpFiles, ViewKVs) ->
                     [[<<(iolist_size(KvBin)):32/native>>, KvBin] | Acc]
                 end,
                 [], KvBins),
-            ok = file:write(ViewFd, ViewRecords),
+            ok = couch_set_view_util:write_compressed(ViewFd, ViewRecords),
             AccCount + length(KvBins)
         end,
         0, ViewKVs),
